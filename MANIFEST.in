@@ -1,0 +1,2 @@
+include versioneer.py
+include catbot/_version.py
