@@ -2,6 +2,8 @@
 
 This cool Telegram CatBot can send images/gifs of cats. Either randomly or by breed.
 
+The bot is running on my Raspberry Pi and can be found here https://t.me/send_random_cat_bot 
+
 ## Development
 
 ### Setup
