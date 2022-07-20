@@ -14,7 +14,7 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 logger = logging.getLogger(__name__)
 
 csv_file_name = "logs/cat_bot_logs.csv"
-df_columns = ["name", "chat_name", "timestamp", "breed", "gif"]
+df_columns = ["group", "timestamp", "breed", "gif"]
 
 config = read_config()
 developer_chat_id = config["developer_chat_id"]
@@ -30,7 +30,7 @@ breeds_full = run_request("GET", "https://api.thecatapi.com/v1/breeds")
 
 
 def sendcatbybreed(update: Update, context: CallbackContext) -> None:
-    """Sends a message with three inline buttons attached."""
+    """Sends a message with inline buttons attached."""
     keyboard = [
         InlineKeyboardButton(breed["name"], callback_data=breed["name"] + "__" + breed["id"]) for breed in breeds_full
     ]
@@ -98,27 +98,22 @@ def sendcat(update: Update, context: CallbackContext, breed=None, gif=False) -> 
     global df
 
     try:
-        from_name = update.message.from_user.first_name
-    except Exception as e:
-        logger.error(e)
-        from_name = "unknown"
-
-    try:
-        logger.info(update.message.chat)
         if "group" in update.message.chat.type:
-            chat_name = update.message.chat.title
+            is_group = True
         else:
-            chat_name = update.message.chat.first_name
+            is_group = False
     except Exception as e:
         logger.error(e)
-        chat_name = "unknown"
+        is_group = False
 
-    df = pd.concat(
-        [df, pd.DataFrame([[from_name, chat_name, datetime.datetime.now(), breed, gif]], columns=df_columns)]
-    )
+    df = pd.concat([df, pd.DataFrame([[is_group, datetime.datetime.now(), breed, gif]], columns=df_columns)])
     df.to_csv(csv_file_name, header=True, index=False)
 
-    context.bot.send_message(developer_chat_id, f"Sending a cat to {from_name} in {chat_name}")
+    if is_group:
+        is_group_text = "a group"
+    else:
+        is_group_text = "a single user"
+    context.bot.send_message(developer_chat_id, f"Sending a cat to {is_group_text}.")
 
 
 def error_handler(update: object, context: CallbackContext) -> None:
