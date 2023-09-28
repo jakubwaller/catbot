@@ -1,6 +1,6 @@
 # Cat Bot
 
-![screenshot](screenshot.jpg)
+![trailer](trailer.gif)
 
 This cool Telegram CatBot can send images/gifs of cats. Either randomly or by breed.
 
