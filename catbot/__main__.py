@@ -1,9 +1,10 @@
+import asyncio
 import datetime
 import logging
 
 import pandas as pd
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
+from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 from tools import run_request, read_config
 
@@ -26,7 +27,7 @@ except Exception:
 breeds_full = run_request("GET", "https://api.thecatapi.com/v1/breeds")
 
 
-def sendcatbybreed(update: Update, context: CallbackContext) -> None:
+async def sendcatbybreed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends a message with inline buttons attached."""
     keyboard = [
         InlineKeyboardButton(breed["name"], callback_data=breed["name"] + "__" + breed["id"]) for breed in breeds_full
@@ -37,37 +38,40 @@ def sendcatbybreed(update: Update, context: CallbackContext) -> None:
 
     reply_markup = InlineKeyboardMarkup(chunks)
     logger.info("called breed")
-    update.message.reply_text("Please choose:", reply_markup=reply_markup)
+    await update.message.reply_text("Please choose:", reply_markup=reply_markup)
 
 
-def button(update: Update, context: CallbackContext) -> None:
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Parses the CallbackQuery and updates the message text."""
     query = update.callback_query
 
     # CallbackQueries need to be answered, even if no notification to the user is needed
     # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
-    query.answer()
+    await query.answer()
 
     breed_name = query.data.split("__")[0]
     breed_id = query.data.split("__")[1]
-    query.edit_message_text(text=f"Sending breed: {breed_name}")
-    update.message = query.message
-    update.message.from_user = query.from_user
-    sendcat(update, context, breed=breed_id)
+    await query.edit_message_text(text=f"Sending breed: {breed_name}")
+    await send_cat_to_chat(query.message.chat, context, breed=breed_id)
 
 
-def hi(update: Update, context: CallbackContext) -> None:
+async def hi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Displays info on how to use the bot."""
-    update.message.reply_text("Hi there! I'm a CatBot and can send images of cats.")
+    await update.message.reply_text("Hi there! I'm a CatBot and can send images of cats.")
 
 
-def sendcatgif(update: Update, context: CallbackContext) -> None:
+async def sendcatgif(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends a cat gif."""
-    sendcat(update, context, gif=True)
+    await send_cat_to_chat(update.message.chat, context, gif=True)
 
 
-def sendcat(update: Update, context: CallbackContext, breed=None, gif=False) -> None:
+async def sendcat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends a cat."""
+    await send_cat_to_chat(update.message.chat, context)
+
+
+async def send_cat_to_chat(chat: Chat, context: ContextTypes.DEFAULT_TYPE, breed=None, gif=False) -> None:
+    """Sends a cat to the given chat."""
 
     if breed:
         suffix = f"?breed_ids={breed}"
@@ -90,17 +94,19 @@ def sendcat(update: Update, context: CallbackContext, breed=None, gif=False) -> 
         try:
             num_of_tries += 1
 
-            url = run_request(
+            response = await asyncio.to_thread(
+                run_request,
                 "GET",
                 f"https://api.thecatapi.com/v1/images/search{suffix}",
                 num_of_tries=5,
                 request_headers={"Content-Type": "application/json", "x-api-key": cat_api_key},
-            )[0]["url"]
+            )
+            url = response[0]["url"]
 
             if url.endswith(".gif"):
-                context.bot.send_animation(update.message.chat.id, url)
+                await context.bot.send_animation(chat.id, url)
             else:
-                context.bot.send_photo(update.message.chat.id, url)
+                await context.bot.send_photo(chat.id, url)
 
             success = True
         except Exception as e:
@@ -112,7 +118,7 @@ def sendcat(update: Update, context: CallbackContext, breed=None, gif=False) -> 
     global df
 
     try:
-        if "group" in update.message.chat.type:
+        if "group" in chat.type:
             is_group = True
         else:
             is_group = False
@@ -127,35 +133,30 @@ def sendcat(update: Update, context: CallbackContext, breed=None, gif=False) -> 
         is_group_text = "a group"
     else:
         is_group_text = "a single user"
-    context.bot.send_message(developer_chat_id, f"Sending a cat to {is_group_text}.")
+    await context.bot.send_message(developer_chat_id, f"Sending a cat to {is_group_text}.")
 
 
-def error_handler(update: object, context: CallbackContext) -> None:
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Log the error and send a telegram message to notify the developer."""
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
 
-    context.bot.send_message(chat_id=developer_chat_id, text=str(context.error))
+    await context.bot.send_message(chat_id=developer_chat_id, text=str(context.error))
 
 
 def main() -> None:
     """Setup and run the bot."""
-    # Create the Updater and pass it your bot's token.
-    updater = Updater(bot_token)
+    application = Application.builder().token(bot_token).build()
 
-    updater.dispatcher.add_handler(CommandHandler("hi", hi))
-    updater.dispatcher.add_handler(CommandHandler("sendcat", sendcat))
-    updater.dispatcher.add_handler(CommandHandler("sendcatgif", sendcatgif))
-    updater.dispatcher.add_handler(CommandHandler("sendcatbybreed", sendcatbybreed))
-    updater.dispatcher.add_handler(CallbackQueryHandler(button))
+    application.add_handler(CommandHandler("hi", hi))
+    application.add_handler(CommandHandler("sendcat", sendcat))
+    application.add_handler(CommandHandler("sendcatgif", sendcatgif))
+    application.add_handler(CommandHandler("sendcatbybreed", sendcatbybreed))
+    application.add_handler(CallbackQueryHandler(button))
 
-    updater.dispatcher.add_error_handler(error_handler)
+    application.add_error_handler(error_handler)
 
-    # Start the Bot
-    updater.start_polling(poll_interval=1)
-
-    # Run the bot until the user presses Ctrl-C or the process receives SIGINT,
-    # SIGTERM or SIGABRT
-    updater.idle()
+    # Runs until the process receives SIGINT, SIGTERM or SIGABRT.
+    application.run_polling(poll_interval=1)
 
 
 if __name__ == "__main__":
