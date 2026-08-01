@@ -9,6 +9,8 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from tools import run_request, read_config
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+# httpx logs full request URLs at INFO, which would put the bot token in the logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 csv_file_name = "logs/cat_bot_logs.csv"
