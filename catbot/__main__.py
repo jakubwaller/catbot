@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import logging
+import random
 
 import pandas as pd
 from telegram import Chat, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -90,18 +91,22 @@ async def sendcat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def send_cat_to_chat(chat: Chat, context: ContextTypes.DEFAULT_TYPE, breed=None, gif=False) -> None:
     """Sends a cat to the given chat."""
 
-    if breed:
-        suffix = f"?breed_ids={breed}"
-    else:
-        suffix = ""
-        breed = "random"
-
     if gif:
-        suffix = "?mime_types=gif"
-    elif len(suffix) == 0:
-        suffix = "?mime_types=jpg,png"
+        extensions = ("gif",)
+    elif breed:
+        extensions = None
+    else:
+        extensions = ("jpg", "png")
 
-    logger.info(suffix)
+    params = {"limit": 100}
+    if breed:
+        params["breed_ids"] = breed
+    else:
+        breed = "random"
+    if extensions:
+        params["mime_types"] = ",".join(extensions)
+
+    logger.info(params)
 
     num_of_max_tries = 5
     num_of_tries = 1
@@ -114,11 +119,18 @@ async def send_cat_to_chat(chat: Chat, context: ContextTypes.DEFAULT_TYPE, breed
             response = await asyncio.to_thread(
                 run_request,
                 "GET",
-                f"https://api.thecatapi.com/v1/images/search{suffix}",
+                "https://api.thecatapi.com/v1/images/search",
+                request_body=params,
                 num_of_tries=5,
                 request_headers=cat_api_headers,
             )
-            url = response[0]["url"]
+            # TheCatAPI ignores mime_types (about 5 gifs in 100 results either way), so the type is filtered here
+            urls = [
+                image["url"] for image in response if extensions is None or image["url"].lower().endswith(extensions)
+            ]
+            if not urls:
+                raise Exception(f"No {params.get('mime_types')} image among {len(response)} results")
+            url = random.choice(urls)
 
             if url.endswith(".gif"):
                 await context.bot.send_animation(chat.id, url)
