@@ -20,19 +20,34 @@ config = read_config()
 developer_chat_id = config["developer_chat_id"]
 bot_token = config["bot_token"]
 cat_api_key = config["cat_api_key"]
+# TheCatAPI answers 403 without the key on /v1/breeds too, not only on image search
+cat_api_headers = {"Content-Type": "application/json", "x-api-key": cat_api_key}
 
 try:
     df = pd.read_csv(csv_file_name)
 except Exception:
     df = pd.DataFrame(columns=df_columns)
 
-breeds_full = run_request("GET", "https://api.thecatapi.com/v1/breeds")
+# Loaded on first use, not at import: a failing breeds call must not keep the whole bot from starting
+breeds_full = None
+
+
+def get_breeds() -> list:
+    global breeds_full
+    if breeds_full is None:
+        breeds = run_request("GET", "https://api.thecatapi.com/v1/breeds", request_headers=cat_api_headers)
+        # Cache only a usable list, so an odd 200 answer is retried on the next call instead of kept until restart
+        if not isinstance(breeds, list) or not breeds:
+            raise Exception(f"Unexpected breeds response: {str(breeds)[:200]}")
+        breeds_full = breeds
+    return breeds_full
 
 
 async def sendcatbybreed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends a message with inline buttons attached."""
+    breeds = await asyncio.to_thread(get_breeds)
     keyboard = [
-        InlineKeyboardButton(breed["name"], callback_data=breed["name"] + "__" + breed["id"]) for breed in breeds_full
+        InlineKeyboardButton(breed["name"], callback_data=breed["name"] + "__" + breed["id"]) for breed in breeds
     ]
 
     chunk_size = 3
@@ -101,7 +116,7 @@ async def send_cat_to_chat(chat: Chat, context: ContextTypes.DEFAULT_TYPE, breed
                 "GET",
                 f"https://api.thecatapi.com/v1/images/search{suffix}",
                 num_of_tries=5,
-                request_headers={"Content-Type": "application/json", "x-api-key": cat_api_key},
+                request_headers=cat_api_headers,
             )
             url = response[0]["url"]
 
