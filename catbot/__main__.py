@@ -35,7 +35,11 @@ breeds_full = None
 def get_breeds() -> list:
     global breeds_full
     if breeds_full is None:
-        breeds_full = run_request("GET", "https://api.thecatapi.com/v1/breeds", request_headers=cat_api_headers)
+        breeds = run_request("GET", "https://api.thecatapi.com/v1/breeds", request_headers=cat_api_headers)
+        # Cache only a usable list, so an odd 200 answer is retried on the next call instead of kept until restart
+        if not isinstance(breeds, list) or not breeds:
+            raise Exception(f"Unexpected breeds response: {str(breeds)[:200]}")
+        breeds_full = breeds
     return breeds_full
 
 
