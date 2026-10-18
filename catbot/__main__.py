@@ -169,7 +169,8 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
     """Log the error and send a telegram message to notify the developer."""
     logger.error(msg="Exception while handling an update:", exc_info=context.error)
 
-    await context.bot.send_message(chat_id=developer_chat_id, text=str(context.error))
+    # An empty or over-long text would make Telegram reject the alert itself
+    await context.bot.send_message(chat_id=developer_chat_id, text=(str(context.error) or repr(context.error))[:4000])
 
 
 def main() -> None:
